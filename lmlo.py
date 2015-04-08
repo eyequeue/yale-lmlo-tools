@@ -1,36 +1,30 @@
 # provides lmlo module
 
 import re       # module for pattern matching with Regular Expressions
-import csv      # module for writing CSV files (can be read in excel)
-import random   # module for generating random numbers
-import math
-import sys
-import pprint
 import string
+import os.path
+import cPickle
+import sys
+import time
 
+'''
+TO DO:
+flag and/or delete duplicate chants
+flag and/or delete duplicate pitches in chants
+'''
 
-########################################################
-# CHANGE THIS TO POINT TO THE LMLO DATA ON YOUR SYSTEM #
-########################################################
+################################################################################################
+# utilities for translating between LMLO scaledegrees, numeric scale degrees, and letter names #
+################################################################################################
 
-lmloFile = "/Users/iq2/research/corpus/chant/lmlo/data/v2-CHNT.txt"
+# basic gamuts
 
-#########################################
-# options for setting search parameters #
-#########################################
+lmloGamut = '%*-0123456789>' # definitely don't change this!
+sdGamut = '1234567' # probably don't change
+letterGamut = 'abcdefg' # probably don't change
+octaveGamut = '-=+^' # can be changed/customized
 
-
-def sortMagic(theTuple):
-    t = theTuple[0]
-    t = t.replace('-','1')
-    t = t.replace(' ','2')
-    t = t.replace('+','3')
-    return t
-
-lmloGamut = '%*-0123456789>'
-sdGamut = '1234567'
-letterGamut = 'abcdefg'
-octaveGamut = '-=+^'
+# turns an LMLO scaledegree character into a two-char octave+sd code
 
 def lmlo2sd (lmloChar):
     i = string.find(lmloGamut, lmloChar)
@@ -40,7 +34,11 @@ def lmlo2sd (lmloChar):
     octave = octaveGamut[(i+3)/7]
     return octave+sd
 
-def sd2pc (sd, final):
+# turns a two-char octave+sd code into a two-char octave+letter name given a final
+# (assumes that scale degree '=1' is in the '=' octave of letter names)
+
+def sd2pc (sd, mode):
+    final = string.lower(mode[1])
     if final not in letterGamut:
         raise NameError("Can't translate final: " + final)
     if len(sd) != 2 and sd[0] not in octaveGamut and sd[1] not in sdGamut:
@@ -52,318 +50,183 @@ def sd2pc (sd, final):
     octave = octaveGamut[i/7]
     return octave+letter
 
-for f in ['c','d','e','f','g']:
-    for sd in lmloGamut:
-        print f, lmlo2sd(sd), sd2pc(lmlo2sd(sd), f)
-    
-sys.exit()
+#####################################################################################
+# hierarchy of classes: lmloCorpus > lmloChant > lmloWord > lmloSyllable > lmloNote #
+#####################################################################################
 
-# dict of dicts for translating SDs to PCs
-sd2pc = { 
-    'c': {
-            '-4' : '-f',
-            '-5' : '-g',
-            '-6' : '=a',
-            '-7' : '=b',
-            ' 1' : '=c',
-            ' 2' : '=d',
-            ' 3' : '=e',
-            ' 4' : '=f',
-            ' 5' : '=g',
-            ' 6' : '+a',
-            ' 7' : '+b',
-            '+1' : '+c',
-            '+2' : '+d',
-            '+3' : '+e'
-        },
-    'd': {
-            '-4' : '-g',
-            '-5' : '=a',
-            '-6' : '=b',
-            '-7' : '=c',
-            ' 1' : '=d',
-            ' 2' : '=e',
-            ' 3' : '=f',
-            ' 4' : '=g',
-            ' 5' : '+a',
-            ' 6' : '+b',
-            ' 7' : '+c',
-            '+1' : '+d',
-            '+2' : '+e',
-            '+3' : '+f'
-        },
-    'e': {
-            '-4' : ' a',
-            '-5' : ' b',
-            '-6' : ' c',
-            '-7' : ' d',
-            ' 1' : ' e',
-            ' 2' : ' f',
-            ' 3' : ' g',
-            ' 4' : '+a',
-            ' 5' : '+b',
-            ' 6' : '+c',
-            ' 7' : '+d',
-            '+1' : '+e',
-            '+2' : '+f',
-            '+3' : '+g'
-        },
-    'f': {
-            '-4' : ' b',
-            '-5' : ' c',
-            '-6' : ' d',
-            '-7' : ' e',
-            ' 1' : ' f',
-            ' 2' : ' g',
-            ' 3' : '+a',
-            ' 4' : '+b',
-            ' 5' : '+c',
-            ' 6' : '+d',
-            ' 7' : '+e',
-            '+1' : '+f',
-            '+2' : '+g',
-            '+3' : '++a'
-        },
-    'g': {
-            '-4' : ' c',
-            '-5' : ' d',
-            '-6' : ' e',
-            '-7' : ' f',
-            ' 1' : ' g',
-            ' 2' : '+a',
-            ' 3' : '+b',
-            ' 4' : '+c',
-            ' 5' : '+d',
-            ' 6' : '+e',
-            ' 7' : '+f',
-            '+1' : '+g',
-            '+2' : '++a',
-            '+3' : '++b'
-        }}
+class lmloNote:
+    def __init__(self, sd, letter):
+        self.sd = sd
+        self.letter = letter
 
+class lmloSyllable:
+    def __init__(self):
+        self.notes = list() # list of lmloNote instances
 
-# translate from letter names to numbers
-pc2int = {       
-    'd' : 0,
-    'e' : 1,
-    'f' : 2,
-    'g' : 3,
-    'a' : 4,
-    'b' : 5,
-    'c' : 6
-}
+class lmloWord:
+    def __init__(self, text = ''):
+        self.text = text
+        self.syllables = list() # list of lmloSyllable instances
 
-# the reverse of pc2int
-int2pc = ['d', 'e','f', 'g', 'a', 'b', 'c']  
-
-# any chant in a mode other than the ones on this list is thrown out
-basicmodes = ['1d', '2d', '3e', '4e', '5f', '6f', '7g', '8g']
-    
-# translate mode number to maneria
-maneria = {
-    '1' : 'protus',
-    '2' : 'protus',
-    '3' : 'deuterus',
-    '4' : 'deuterus',
-    '5' : 'tritus',
-    '6' : 'tritus',
-    '7' : 'tetrardus',
-    '8' : 'tetrardus'
-}    
-
-# translate mode number to ambitus
-ambitus = {
-    '1' : 'authentic',
-    '2' : 'plagal',
-    '3' : 'authentic',
-    '4' : 'plagal',
-    '5' : 'authentic',
-    '6' : 'plagal',
-    '7' : 'authentic',
-    '8' : 'plagal'
-}    
-
-
-######################
-# open all the files #
-######################
-
-
-
-f = open(lmloFile, "r")
-
-LMLO = list()
-for line in f:
-    LMLO.append(line.rstrip())   # strip off trailing newline/CR
-
-#######################################################
-# first pass through the LMLO data:                   #
-# * find all header lines and the chant lines we want #
-# * extract metadata from headers                     #
-# * clean up chant lines a bit                        #
-# * populate the chantLines data structure            #
-#######################################################
-
-chantLines = list()
-theHeader = ""
-theMode = ""
-
-
-for i in range(len(LMLO)):
-
-    # a line with '|gNN =SGN.mf' starts a new chant and includes mode information
-    # see the documentation for the re module if you want to understand how this works
-
-    matchHeaderLine = re.search('\\|g(.*?) \\=(.*?)\\.(..)',LMLO[i]) # parens in the regex aren't part of the 
-                                                                # pattern to be matched but indicate parts
-                                                                # of the pattern we'll want to refer to later
-
-    # if it's a header extract the metadata
-
-    if matchHeaderLine:                         
-        theHeader = matchHeaderLine.group(0)      # group(0) = the whole regex (matched pattern)
-        theMode = matchHeaderLine.group(3)        # group(3) = the third paren group in the regex
-        theService = matchHeaderLine.group(2)[0]  # = first character of the second paren group in the regex
-        theGenre = matchHeaderLine.group(2)[1]    # = second character of the second paren group in the regex
-        continue                             # and now we can skip to the next line; we got what we wanted
-    
-    # if the most recent header sets a mode that isn't in basicmodes, skip this line
-    # (effectively, keep skipping until the next header that changes modes to a basicmode)
-
-    if theMode not in searchModes: continue   
-    
-    # line with '\ ' is [usually] a line of chant
-    # this is [usually] the second of Hughes's four representations of each chant
-    # so we've got all the words and syllables and stuff
-    # (this is a change from what I've been saying in class)
-    
-    matchChantLine = re.search('\\\\ ',LMLO[i])
-    if not matchChantLine: continue   # skip lines that don't start with '\ '
-    
-    # some chant index lines are broken up over two lines in the file, so
-    # if the line doesn't contain '\()' [optionally with stuff inside the parens] 
-    # then it's continued on the next line according to LMLO conventions
-    
-    while not re.search('\\\\\\(.*?\\)',LMLO[i]):  # while makes this iterative; we keep gluing lines
-                                                   # together until we match '\()' or '\(*stuff*)'
-       LMLO[i] = LMLO[i] + LMLO.pop(i+1)    # glue this line together with the next one, which is deleted;
-       LMLO.append("")                      # add a blank line at the end so the length of LMLO doesn't change;
-                                            # if we don't add blanks the big loop we're in will freak out since i
-                                            # was set to iterate over the original length of LMLO;
-                                            # those empty lines will be ignored b/c they aren't headers or chantlines
+class lmloChant:
+    def __init__(self, mode):
+        if len(mode) != 2 or mode[0] not in '12345678' or mode[1] not in 'abcdefgABCDEFG':
+            raise NameError("Unparseable mode: " + mode)
+        if mode[0] not in '12345678':
+            raise NameError("Unknown mode number: " + mode[0])
+        self.mode = mode
+        self.words = list()
+        self.flatSD = list()
+        self.flatLetter = list()
         
-    # get rid of footnotes, which by LMLO convention have the form '(!*stuff*)'
+    def fulltext(self):
+        ws = ''
+        for w in self.words:
+            ws += w.text + ' '
+        return ws[0:-1]
 
-    re.sub("\\(!.*?\\)","",LMLO[i]) # what this really does is replace a footnote with an empty string
+class lmloCorpus:
+    def __init__(self, lmloFilename):
+
+        pickleFilename = 'LMLOdata.pickle'
+        if os.path.isfile(pickleFilename):
+            sys.stderr.write("getting data from pickle... ")
+            start = time.clock()
+            self.chants = cPickle.load(open(pickleFilename, 'r'))
+            sys.stderr.write(str(time.clock()-start) + ' secs\n')
+        else:
+
+            sys.stderr.write("data pickle not found, recalculating... ")
+            start = time.clock()
+
+            #######################################################
+            # first pass through the LMLO data:                   #
+            # * find all header lines and the chant lines we want #
+            # * extract metadata from headers                     #
+            # * clean up chant lines a bit                        #
+            # * populate the self.chants data structure            #
+            #######################################################
+
+            f = open(lmloFilename, "r")
+
+            lmloDataLines = list()
+            for line in f:
+                lmloDataLines.append(line.rstrip())   # strip off trailing newline/CR
+
+            self.chants = list()
+            theHeader = ""
+            theMode = ""
+
+
+            for i in range(len(lmloDataLines)):
+
+                # a line with '|gNN =SGN.mf' starts a new chant and includes mode information
+                # see the documentation for the re module if you want to understand how this works
+
+                matchHeaderLine = re.search('\\|g(.*?) \\=(.*?)\\.(..)',lmloDataLines[i]) # parens in the regex aren't part of the 
+                                                                            # pattern to be matched but indicate parts
+                                                                            # of the pattern we'll want to refer to later
+
+                # if it's a header extract the metadata
+
+                if matchHeaderLine:                         
+                    theHeader = matchHeaderLine.group(0)      # group(0) = the whole regex (matched pattern)
+                    theMode = matchHeaderLine.group(3)        # group(3) = the third paren group in the regex
+                    theService = matchHeaderLine.group(2)[0]  # = first character of the second paren group in the regex
+                    theGenre = matchHeaderLine.group(2)[1]    # = second character of the second paren group in the regex
+                    continue                             # and now we can skip to the next line; we got what we wanted
     
-    # populate chantLines, a list of dicts that hold data and metadata for each chant
+                # line with '\ ' is [usually] a line of chant
+                # this is [usually] the second of Hughes's four representations of each chant
+                # so we've got all the words and syllables and stuff
     
-    thisChant = dict()
-    thisChant['header'] = theHeader
-    thisChant['mode'] = theMode
-    thisChant['service'] = theService
-    thisChant['genre'] = theGenre
-    thisChant['data'] = LMLO[i]
-    thisChant['i'] = i
-    thisChant['random'] = random.random()
+                matchChantLine = re.search('^\\\\ ',lmloDataLines[i])
+                if not matchChantLine: continue   # skip lines that don't start with '\ '
+            
+                # some chant index lines are broken up over two lines in the file, so
+                # if the line doesn't contain '\()' [optionally with stuff inside the parens] 
+                # then it's continued on the next line according to LMLO conventions
     
-    chantLines.append(thisChant)
+                while not re.search('\\\\\\(.*?\\)',lmloDataLines[i]):  # while makes this iterative; we keep gluing lines
+                                                               # together until we match '\()' or '\(*stuff*)'
+                   lmloDataLines[i] = lmloDataLines[i] + lmloDataLines.pop(i+1)    # glue this line together with the next one, which is deleted;
+                   lmloDataLines.append("")                      # add a blank line at the end so the length of lmloDataLines doesn't change;
+                                                        # if we don't add blanks the big loop we're in will freak out since i
+                                                        # was set to iterate over the original length of lmloDataLines;
+                                                        # those empty lines will be ignored b/c they aren't headers or chantlines
+        
+                # get rid of footnotes, which by LMLO convention have the form '(!*stuff*)'
 
+                re.sub("\\(!.*?\\)","",lmloDataLines[i]) # what this really does is replace a footnote with an empty string
+    
+                # populate self.chants, a list of dicts that hold data and metadata for each chant
 
+                try:
+                    thisChant = lmloChant(theMode)
+                except:
+                    continue
+                if theMode[0] in '1357':
+                    thisChant.ambitus = 'authentic'
+                elif theMode[0] in '2468':
+                    thisChant.ambitus = 'plagal'
+                if theMode[0] in '12':
+                    thisChant.maneria = 'protus'
+                elif theMode[0] in '34':
+                    thisChant.maneria = 'deuterus'
+                elif theMode[0] in '56':
+                    thisChant.maneria = 'tritus'
+                elif theMode[0] in '78':
+                    thisChant.maneria = 'tetrardus'
+            
+                thisChant.lmloHeader = theHeader
+                thisChant.service = theService
+                thisChant.genre = theGenre
+                thisChant.index = i
+                thisChant.lmloEncoding = lmloDataLines[i]
+    
+                self.chants.append(thisChant)
 
+            ####################################################################
+            # second pass: process each chant into words, notes, and syllables #
+            ####################################################################
 
-########################
-########################
-####second iteration:###
-########################
-########################
-
-#get ngrams
-
-
-dupes = 0           #running counter of duplicate chants
-
-suffixTree = dict()
-prefixTree = dict()
-for n in range(1,treeDepth+1):
-    suffixTree[n] = dict()
-    suffixTree[n]['total'] = 0
-    prefixTree[n] = dict()
-    prefixTree[n]['total'] = 0
-
-
-allChants = []  # this will be a duplicate-free list of chants
-
-for chant in chantLines:
-    mList = [] # will contain letter names of notes
-
-#begin borrowed chunk
-    i = chant['i']
-    chantWords = LMLO[i].split()[1:-1]     # split() turns a string into a list of words
-    theMode = chant['mode']
-
-    theGenre = chant['genre']
-    for theCW in chantWords:
-        prevSD = ''
-        syllables = theCW.split('.')   # split the chantword on periods (which separate syllables in the encoding)
-        word = syllables[0]                   # everything before the first . in a chantword is the word
-        for j in range(len(syllables)-1):
-            theSyll = syllables[j+1]    # now look at subsequent parts of the chantword, which are notes by syllable
-            for c in range(len(theSyll)):   # and now we go character by character through the syllable
-                if theSyll[c] == '=' and prevSD != '':
-                    sd = prevSD       # if we see a '=' we repeat the previous pitch
-                else:
-                    try:
-                        sd = lmlo2sd[theSyll[c]]  # this throws an error if we see anything but a pitch character
-                    except:
-                        continue   # in which case we simply ignore and skip to the next character
+            for i, theChant in enumerate(self.chants):
+        
+            #begin borrowed chunk
+                chantWords = theChant.lmloEncoding.split()[1:-1]     # each chantWordord has the form illustret.14.43454.21
+            
+                for theCWtext in chantWords:
+                            
+                    prevSD = ''
+                    syllables = theCWtext.split('.')   # split the chantword on periods (which separate syllables in the encoding)
+                    if len(syllables) == 1: continue
+                    theWord = lmloWord(syllables[0])   # everything before the first . in a chantword is the text word
                 
-                # if we're still here then the current character is a scale degree
+                    # now look at subsequent parts of the chantword, which are notes by syllable
                 
-                #add the current pc to mList (as a letter name)
-                if useLetterNamesInsteadOfSDs:
-                    mList.append(sd2pc[theMode[-1]][sd])
-                else:
-                    mList.append(sd)
+                    for j in range(len(syllables)-1):
+                
+                        theSyllData = syllables[j+1]    
+                        if len(theSyllData) == 0: continue
 
-
-    i = 0
-
-    # prune duplicate pitches
-
-    while i < len(mList)-1:
-        while i < len(mList)-1 and mList[i] == mList[i+1]:
-            mList.pop(i)
-        i += 1
-    
-    # add start and end tokens
-
-    mList.insert(0, '>S')
-    mList.append('>E')
-
-    # print the whole chant
-
-#     s = ""
-#     for c in mList:
-#         s += c
-#     print theMode, theGenre, s
-
-    #check to see if this is a duplicate chant. If it is, increase the total tally of duplicates and move on to the next. otherwise, add it to the total list of all chants
-    if mList in allChants:
-        dupes += 1
-        continue
-    else:
-        allChants.append(mList)
-#         if chant['random'] < 0.8:
-#             trainingChants.append(mList)
-#         else:
-#             testChants.append(mList)
-#             continue
-
-matchSequence = [' d', ' f', ' d', ' c', ' f', ' g', '+a']
-for mList in allChants:
-    n = len(matchSequence)
-    for nn in range(n-1,n+2):
-        for pos in range(len(mList)-nn):
-            ngram = mList[pos:pos+nn+1] 
-            print fuzz.ratio(matchSequence, ngram), ngram
+                        theSyllable = lmloSyllable()
+                    
+                        for c in range(len(theSyllData)):   # and now we go character by character through the syllable
+                            if theSyllData[c] == '=' and prevSD != '':
+                                sd = prevSD       # if we see a '=' we repeat the previous pitch
+                            else:
+                                try:
+                                    sd = lmlo2sd(theSyllData[c])  # this throws an error if we see anything but a pitch character
+                                except:
+                                    #print 'possible typo in LMLO data: ' +theSyllData[c]#+' in '+ theSyllData + ' in ' + theChant.lmloMetadata['lmlo-encoding']
+                                    continue   # in which case we simply ignore and skip to the next character
+                            # if we're still here then sd (the current character) is a scale degree
+                            theNote = lmloNote(sd, sd2pc(sd, theChant.mode)) 
+                            theSyllable.notes.append(theNote) 
+                            theChant.flatLetter.append(theNote.letter)
+                            theChant.flatSD.append(theNote.sd)
+                        
+                        theWord.syllables.append(theSyllable)
+                    theChant.words.append(theWord)
+            cPickle.dump(self.chants, open(pickleFilename,'w'))
+            sys.stderr.write(str(time.clock()-start) + ' secs\n')
