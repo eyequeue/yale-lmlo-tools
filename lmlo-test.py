@@ -19,7 +19,7 @@ corpus = lmloCorpus("/Users/iq2/research/corpus/chant/yale-lmlo-tools/data/v2-CH
 #         self.words = list of lmloWord objects (nested representation of chant)
 #         self.flatLetter = list of 2-char letter names (flat representation of chant)
 #         self.flatSD = list of 2-char SD names (flat representation of chant)
-#         self.fulltext = string containing all words (text) in the chant
+#         self.fulltext() = string containing all words (text) in the chant
 #         self.mode = two-char mode encoding [taken directly from LMLO header]
 #         self.maneria = 'protus', 'deuterus', etc. [calculated from mode number]
 #         self.ambitus = 'plagal' or 'authentic' [calculated from mode number]
@@ -32,13 +32,5 @@ corpus = lmloCorpus("/Users/iq2/research/corpus/chant/yale-lmlo-tools/data/v2-CH
 # class lmloCorpus:
 #         self.chants = list of lmloChant instances
 
-uniqChants = list()
-
 for c in corpus.chants:
-    notelist = []
-    for n in c.flatLetter:
-        notelist.append(n)
-    if notelist not in uniqChants:
-        uniqChants.append(notelist)
-    else:
-        print str(c.flatLetter[0:15])
+    print c.fulltext()
