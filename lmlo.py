@@ -14,6 +14,9 @@ flag and/or delete duplicate pitches in chants
 figure out what the capital letters are: beginnings/ends of units?
 '''
 
+def ngrams( inputList, n ):
+    return zip(*[inputList[i:] for i in range(n)])
+
 ################################################################################################
 # utilities for translating between LMLO scaledegrees, numeric scale degrees, and letter names #
 ################################################################################################
@@ -30,7 +33,13 @@ expBasicModes = ['1d','2d','3e','4e','5f','6f','6c','7g','8g']
 def sortMagic(theTuple):
     t = theTuple[0]
     t = t.replace('-','1')
-    t = t.replace(' ','2')
+    t = t.replace('=','2')
+    t = t.replace('+','3')
+    return t
+
+def sortMagicString(t):
+    t = t.replace('-','1')
+    t = t.replace('=','2')
     t = t.replace('+','3')
     return t
 
@@ -309,27 +318,29 @@ class lmloCorpus:
         return total
         
     def selectMode(self, modes):
+    
+        self.ignored = 0
+        self.retained = 0
+
+        def filter(attr):
+            for c in self.chants:
+                if getattr(c, attr) not in modes:
+                    c.ignoreMode = True
+                    self.ignored += 1
+                else:
+                    c.ignoreMode = False
+                    if not c.ignoreDupe:     # modify this line if other ignore types are added
+                        self.retained += 1
+    
         if isinstance(modes, str):
             modes = [modes]
-        print modes
         if modes in [['protus'],['deuterus'],['tritus'],['tetrardus']]:
-            for c in self.chants:
-                if c.maneria not in modes:
-                    c.ignoreMode = True
-                else:
-                    c.ignoreMode = False
+            filter('maneria')
         elif modes in [['authentic'],['plagal']]:
-            for c in self.chants:
-                if c.ambitus not in modes:
-                    c.ignoreMode = True
-                else:
-                    c.ignoreMode = False
+            filter('ambitus')
         else:
-            for c in self.chants:
-                if c.mode not in modes:
-                    c.ignoreMode = True
-                else:
-                    c.ignoreMode = False
+            filter('mode')
+        print 'filter = {}, {} chants ({} ignored)'.format(modes, self.retained, self.ignored)
 
     def findLicks( self, treeDepth = 20, countThreshold = 10, probThreshold = .9, representation = 'sd' ):
         self.suffixTree = dict()
@@ -411,7 +422,7 @@ class lmloCorpus:
         output += '{:.2f}'.format(thesuffixProb)
         if thesuffixProb > self.probThreshold: 
             output += " *"
-        print output
+        if output[-1]=='*': print output
         if lick[-1] == '>E' or n == self.treeDepth: return
         for suffix in sorted(self.suffixTree[n+1][lick], key=sortMagic):
             if suffix == 'total': continue
@@ -435,7 +446,7 @@ class lmloCorpus:
         output += '{:.2f}'.format(thePrefixProb)
         if thePrefixProb > self.probThreshold: 
             output += " *"
-        print output
+        if output[-1]=='*': print output
         if lick[0] == '>S' or n == self.treeDepth: return
         for prefix in sorted(self.prefixTree[n+1][lick], key=sortMagic):
             if prefix == 'total': continue
