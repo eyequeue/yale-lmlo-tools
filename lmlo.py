@@ -6,6 +6,9 @@ import os.path
 import cPickle
 import sys
 import time
+import math
+import collections
+
 
 '''
 TO DO:
@@ -13,6 +16,30 @@ flag and/or delete duplicate chants
 flag and/or delete duplicate pitches in chants
 figure out what the capital letters are: beginnings/ends of units?
 '''
+
+
+# from http://stackoverflow.com/questions/3012421/python-lazy-property-decorator
+# used for lazy evaluation of flatLetter and flatSD
+
+class lazy_property(object):
+    '''
+    meant to be used for lazy evaluation of an object attribute.
+    property should represent non-mutable data, as it replaces itself.
+    '''
+
+    def __init__(self,fget):
+        self.fget = fget
+        self.func_name = fget.__name__
+
+
+    def __get__(self,obj,cls):
+        if obj is None:
+            return None
+        value = self.fget(obj)
+        setattr(obj,self.func_name,value)
+        return value
+
+
 
 def ngrams( inputList, n ):
     return zip(*[inputList[i:] for i in range(n)])
@@ -32,15 +59,13 @@ expBasicModes = ['1d','2d','3e','4e','5f','6f','6c','7g','8g']
 
 def sortMagic(theTuple):
     t = theTuple[0]
-    t = t.replace('-','1')
-    t = t.replace('=','2')
-    t = t.replace('+','3')
+    for i in range(len(octaveGamut)):
+        t = t.replace(octaveGamut[i],str(i))
     return t
 
 def sortMagicString(t):
-    t = t.replace('-','1')
-    t = t.replace('=','2')
-    t = t.replace('+','3')
+    for i in range(len(octaveGamut)):
+        t = t.replace(octaveGamut[i],str(i))
     return t
 
 # turns an LMLO scaledegree character into a two-char octave+sd code
@@ -56,7 +81,7 @@ def lmlo2sd (lmloChar):
 # turns a two-char octave+sd code into a two-char octave+letter name given a final
 # (assumes that scale degree '=1' is in the '=' octave of letter names)
 
-def sd2pc (sd, mode):
+def sd2letter (sd, mode):
     final = string.lower(mode[1])
     if final not in letterGamut:
         raise NameError("Can't translate final: " + final)
@@ -68,6 +93,97 @@ def sd2pc (sd, mode):
     letter = letterGamut[i%7]
     octave = octaveGamut[i/7]
     return octave+letter
+
+# NEED TO WRITE letter2sd !!!!!
+
+def letter2number (letter):
+    return letterGamut.index(letter[1]) + 7 * octaveGamut.index(letter[0])
+    
+l2v = dict()
+l2v['-d'] = 'D'
+l2v['-e'] = 'E'
+l2v['-f'] = '8'
+l2v['-g'] = '9'
+l2v['=a'] = 'a'
+l2v['=b'] = 'b'
+l2v['=c'] = 'c'
+l2v['=d'] = 'd'
+l2v['=e'] = 'e'
+l2v['=f'] = 'f'
+l2v['=g'] = 'g'
+l2v['+a'] = 'h'
+l2v['+b'] = 'j'
+l2v['+c'] = 'k'
+l2v['+d'] = 'l'
+l2v['+e'] = 'm'
+l2v['+f'] = 'n'
+l2v['+g'] = 'o'
+l2v['^a'] = 'p'
+l2v['^b'] = 'q'
+l2v['>E'] = '5'
+l2v['>S'] = '1'
+
+v2small = dict()
+v2small['-'] = '-'
+v2small['D'] = 'Q'
+v2small['E'] = 'R'
+v2small['8'] = '('
+v2small['9'] = ')'
+v2small['a'] = 'A'
+v2small['b'] = 'B'
+v2small['c'] = 'C'
+v2small['d'] = 'D'
+v2small['e'] = 'E'
+v2small['f'] = 'F'
+v2small['g'] = 'G'
+v2small['h'] = 'H'
+v2small['j'] = 'J'
+v2small['k'] = 'K'
+v2small['l'] = 'L'
+v2small['m'] = 'M'
+v2small['n'] = 'N'
+v2small['o'] = 'O'
+v2small['p'] = 'P'
+v2small['q'] = 'Q'
+   
+fullGenre = dict()
+fullGenre['$'] = 'suffrage (usually an antiphon)'
+fullGenre['A'] = 'antiphon or Agnus'
+fullGenre['D'] = 'dialogue (versicle and response)'
+fullGenre['E'] = 'antiphon for gospel (or monastic) canticles'
+fullGenre['H'] = 'hymn'
+fullGenre['I'] = 'invitatory'
+fullGenre['J'] = 'alleluia at Mass'
+fullGenre['K'] = 'canticle text or Kyrie'
+fullGenre['Q'] = 'sequence'
+fullGenre['R'] = 'responsory or gradual'
+fullGenre['U'] = 'alleluia verse'
+fullGenre['V'] = 'verse of responsory or gradual'
+fullGenre['W'] = 'verse (not responsory or alleluia)'
+fullGenre['X'] = 'doxology'
+fullGenre['Z'] = 'Benedicamus Domino'
+fullGenre['a'] = 'antiphon or Agnus [incipit]'
+fullGenre['i'] = 'invitatory [incipit]'
+fullGenre['l'] = 'lesson [incipit]'
+fullGenre['r'] = 'responsory or gradual [incipit]'
+fullGenre['v'] = 'verse of responsory or gradual [incipit]'
+
+fullService = dict()
+fullService['$'] = 'Memorial service or suffrage'
+fullService['C'] = 'Compline'
+fullService['H'] = 'Little hours'
+fullService['L'] = 'Lauds'
+fullService['M'] = 'Matins'
+fullService['N'] = 'Nones'
+fullService['P'] = 'Prime'
+fullService['Q'] = 'Unknown or unidentified service'
+fullService['R'] = 'Procession'
+fullService['S'] = 'Sext'
+fullService['T'] = 'Terce'
+fullService['U'] = '[not explained by Hughes]'
+fullService['V'] = 'First Vespers'
+fullService['W'] = 'Second Vespers'
+
 
 #####################################################################################
 # hierarchy of classes: lmloCorpus > lmloChant > lmloWord > lmloSyllable > lmloNote #
@@ -95,14 +211,49 @@ class lmloChant:
             raise NameError("Unknown mode number: " + mode[0])
         self.mode = mode
         self.words = list()
-        self.flatSD = list()
-        self.flatLetter = list()
         self.ignoreMode = False
         self.ignoreDupe = False
+        
+    @lazy_property
+    def volpiano(self):
+        volpiano = '1---'
+        for w in self.words:
+            for s in w.syllables:
+                for n in s.notes:
+                    volpiano += l2v[n.letter]
+                volpiano += '-'
+            volpiano += '-'
+        volpiano += '5'
+        return volpiano
+
+
+    @lazy_property
+    def flatSD(self):
+        print "calculating flatSD"
+        flat = ['>S']
+        for w in self.words:
+            for s in w.syllables:
+                for n in s.notes:
+                    flat.append(n.sd)
+        flat.append('>E')
+        return flat
+        
+    @lazy_property
+    def flatLetter(self):
+        flat = ['>S']
+        for w in self.words:
+            for s in w.syllables:
+                for n in s.notes:
+                    flat.append(n.letter)
+        flat.append('>E')
+        return flat
+        
+        
         
     def ignore(self):
         return self.ignoreMode or self.ignoreDupe
         
+    @lazy_property
     def fulltext(self):
         ws = ''
         for w in self.words:
@@ -143,6 +294,14 @@ class lmloCorpus:
 
 
             for i in range(len(lmloDataLines)):
+            
+                # look for new office header
+                # see the documentation for the re module if you want to understand how this works
+            
+                matchOfficeLine = re.search('\\(X (.*?)\\)', lmloDataLines[i])
+                if matchOfficeLine:
+                    theOffice = matchOfficeLine.group(1)
+                    continue
 
                 # a line with '|gNN =SGN.mf' starts a new chant and includes mode information
                 # see the documentation for the re module if you want to understand how this works
@@ -202,7 +361,7 @@ class lmloCorpus:
                 elif theMode[0] in '78':
                     thisChant.maneria = 'tetrardus'
             
-                thisChant.lmloHeader = theHeader
+                thisChant.office = theOffice
                 thisChant.service = theService
                 thisChant.genre = theGenre
                 thisChant.index = i
@@ -218,6 +377,7 @@ class lmloCorpus:
         
             #begin borrowed chunk
                 chantWords = theChant.lmloEncoding.split()[1:-1]     # each chantWordord has the form illustret.14.43454.21
+                del theChant.lmloEncoding
             
                 for theCWtext in chantWords:
                             
@@ -245,31 +405,25 @@ class lmloCorpus:
                                     #print 'possible typo in LMLO data: ' +theSyllData[c]#+' in '+ theSyllData + ' in ' + theChant.lmloMetadata['lmlo-encoding']
                                     continue   # in which case we simply ignore and skip to the next character
                             # if we're still here then sd (the current character) is a scale degree
-                            theNote = lmloNote(sd, sd2pc(sd, theChant.mode)) 
+                            theNote = lmloNote(sd, sd2letter(sd, theChant.mode)) 
                             theSyllable.notes.append(theNote) 
-                            theChant.flatLetter.append(theNote.letter)
-                            theChant.flatSD.append(theNote.sd)
                         
                         theWord.syllables.append(theSyllable)
                     theChant.words.append(theWord)
                     
                 # add start tokens where appropriate
                 
-                theChant.flatLetter.insert(0, '>S')
-                theChant.flatSD.insert(0, '>S')
                 firstSyllable = lmloSyllable()
                 firstSyllable.notes.append('>S')
                 firstWord = lmloWord('>S')
                 firstWord.syllables.append(firstSyllable)
                 
-                theChant.flatLetter.append('>E')
-                theChant.flatSD.append('>E')
                 lastSyllable = lmloSyllable()
                 lastSyllable.notes.append('>E')
                 lastWord = lmloWord('>E')
                 lastWord.syllables.append(lastSyllable)
 
-            cPickle.dump(self.chants, open(pickleFilename,'w'))
+            cPickle.dump(self.chants, open(pickleFilename,'w'), protocol=cPickle.HIGHEST_PROTOCOL)
             sys.stderr.write(str(time.clock()-start) + ' secs\n')
 
     def ignoreDuplicateChants( self, verbose = False ):
@@ -280,14 +434,43 @@ class lmloCorpus:
                 if c1.flatLetter == c2.flatLetter:
                     ignored += 1
                     c2.ignoreDupe = True
-                    if verbose:
-                        if not origPrinted:
-                            print
-                            print 'orig:{:6}{}'.format(c1.index,c1.lmloHeader + c1.lmloEncoding)
-                            origPrinted = True
-                        print 'dupe:{:6}{}'.format(c2.index,c2.lmloHeader + c2.lmloEncoding)
         return ignored
         
+    def selectMode(self, modes):
+    
+        self.ignored = 0
+        self.retained = 0
+        self.modeFilter = set()
+
+        def filter(attr):
+            for c in self.chants:
+                if modes != ['all'] and getattr(c, attr) not in modes:
+                    c.ignoreMode = True
+                    self.ignored += 1
+                else:
+                    self.modeFilter.add(c.mode)
+                    c.ignoreMode = False
+                    if not c.ignoreDupe:     # modify this line if other ignore types are added
+                        self.retained += 1
+    
+        if isinstance(modes, str):
+            modes = [modes]
+        if modes in [['protus'],['deuterus'],['tritus'],['tetrardus']]:
+            filter('maneria')
+        elif modes in [['authentic'],['plagal']]:
+            filter('ambitus')
+        else:
+            filter('mode')
+        print 'filter = {}, {} chants ({} ignored)'.format(modes, self.retained, self.ignored)
+
+    def selected( self ):
+    
+        l = list()
+        for c in self.chants:
+            if not c.ignoreMode and not c.ignoreDupe:
+                l.append(c)
+        return l
+
     def stripDuplicatePitches( self ):
     
     # IS IT NECESSARY TO REMOVE PITCHES FROM WORD-BY-WORD REPRESENTATION?
@@ -317,37 +500,14 @@ class lmloCorpus:
             total += 1
         return total
         
-    def selectMode(self, modes):
-    
-        self.ignored = 0
-        self.retained = 0
 
-        def filter(attr):
-            for c in self.chants:
-                if getattr(c, attr) not in modes:
-                    c.ignoreMode = True
-                    self.ignored += 1
-                else:
-                    c.ignoreMode = False
-                    if not c.ignoreDupe:     # modify this line if other ignore types are added
-                        self.retained += 1
-    
-        if isinstance(modes, str):
-            modes = [modes]
-        if modes in [['protus'],['deuterus'],['tritus'],['tetrardus']]:
-            filter('maneria')
-        elif modes in [['authentic'],['plagal']]:
-            filter('ambitus')
-        else:
-            filter('mode')
-        print 'filter = {}, {} chants ({} ignored)'.format(modes, self.retained, self.ignored)
-
-    def findLicks( self, treeDepth = 20, countThreshold = 10, probThreshold = .9, representation = 'sd' ):
+    def findLicks( self, representation, treeDepth = 20, countThreshold = 10, entropyThreshold = .9):
+        
         self.suffixTree = dict()
         self.prefixTree = dict()
         self.treeDepth = treeDepth
         self.countThreshold = countThreshold
-        self.probThreshold = probThreshold
+        self.entropyThreshold = entropyThreshold
         for n in range(1,self.treeDepth+1):
             self.suffixTree[n] = dict()
             self.suffixTree[n]['total'] = 0
@@ -356,6 +516,9 @@ class lmloCorpus:
 
         if string.lower(representation) not in ['sd','letter']:
             raise NameError('unknown representation: ' + representation)
+
+        self.lickModeDist = collections.defaultdict(collections.Counter)
+        
 
         for theChant in self.chants:
         
@@ -366,7 +529,6 @@ class lmloCorpus:
             else:
                 mList = theChant.flatLetter
             
-
             # Build suffix and prefix trees
 
             for n in range(1, self.treeDepth+1):
@@ -388,77 +550,134 @@ class lmloCorpus:
                     self.suffixTree[n][prefix]['total'] += 1
             
                     self.suffixTree[n]['total'] += 1
+        
+                    # tally modal distribution of lick
+                    
+                    self.lickModeDist[ngram][theChant.mode] += 1
+
             
                 # prefix tree
 
-                for loc in range(len(mList)):
-                    if loc >= (len(mList) - n + 1): break
-                    ngram = tuple(mList[loc:loc+n])
-                    prefix = tuple([ngram[0]])
-                    suffix = tuple(ngram[1:])
-                    if suffix not in self.prefixTree[n]:
-                        self.prefixTree[n][suffix] = dict()
-                        self.prefixTree[n][suffix]['total'] = 0
-                    if prefix in self.prefixTree[n][suffix]:
-                        self.prefixTree[n][suffix][prefix] += 1
-                    else:
-                        self.prefixTree[n][suffix][prefix] = 1
-                    self.prefixTree[n][suffix]['total'] += 1
-            
-                    self.prefixTree[n]['total'] += 1
+#                 for loc in range(len(mList)):
+#                     if loc >= (len(mList) - n + 1): break
+#                     ngram = tuple(mList[loc:loc+n])
+#                     prefix = tuple([ngram[0]])
+#                     suffix = tuple(ngram[1:])
+#                     if suffix not in self.prefixTree[n]:
+#                         self.prefixTree[n][suffix] = dict()
+#                         self.prefixTree[n][suffix]['total'] = 0
+#                     if prefix in self.prefixTree[n][suffix]:
+#                         self.prefixTree[n][suffix][prefix] += 1
+#                     else:
+#                         self.prefixTree[n][suffix][prefix] = 1
+#                     self.prefixTree[n][suffix]['total'] += 1
+#             
+#                     self.prefixTree[n]['total'] += 1
+                    
+                
+                
 
-    def printPartialSuffixTree ( self, lick ):
+    def traverseSuffixTree ( self, lick, chainLength, outputList ):
 
         def suffixProb ( lick ):
             n = len(lick)
-            return self.suffixTree[n][lick[0:-1]][lick[-1:]] * 1. / self.suffixTree[n][lick[0:-1]]['total']
+            branch = self.suffixTree[n][lick[0:-1]]
+#             print lick, lick[-1], branch
+            return branch[(lick[-1],)] * 1. / branch['total']
+        
+        def suffixEntropy ( lick ):
+            n = len(lick) + 1
+            H = 9.99
+            if n <= self.treeDepth and lick[-1] != '>E':
+                H = 0.
+                branch = self.suffixTree[n][lick]
+                for leaf in branch:
+                    if leaf == 'total': continue
+                    P = branch[leaf] * 1. / branch['total']
+                    H -= P * math.log(P, 2)
+#                print '{:3f} {:45}  {:10}  {}'.format(H, lick[0:-1], leaf, branch)
+            return H
 
         n = len(lick)
-        thesuffixProb = suffixProb(lick)
-        output = ''
-        output += '{:>6d}'.format(self.suffixTree[n][lick[0:-1]][lick[-1:]])
-        for c in lick: output += '{:>4}'.format(c)
-        for i in range(n,self.treeDepth+1): output += '    '
-        output += '{:.2f}'.format(thesuffixProb)
-        if thesuffixProb > self.probThreshold: 
-            output += " *"
-        if output[-1]=='*': print output
-        if lick[-1] == '>E' or n == self.treeDepth: return
+        theSuffixEntropy = suffixEntropy(lick)
+        
+        sortString = ''
+        for i in reversed(lick):
+            sortString += l2v[i]
+            
+        hashes = ''
+        
+        output = list()
+        output.append(self.suffixTree[n][lick[0:-1]][lick[-1:]])
+        for i in range(n,self.treeDepth): output.append('')
+        for c in lick: output.append(c)
+        output.append(theSuffixEntropy)
+        if suffixProb(lick) < .5: chainLength = 0
+        if theSuffixEntropy < self.entropyThreshold: 
+            chainLength += 1
+        if chainLength != 0 and theSuffixEntropy >= self.entropyThreshold:
+            if theSuffixEntropy >= self.entropyThreshold: 
+                for i in range(chainLength):
+                    hashes += '#'
+            chainLength = 0
+        output.append(hashes)
+            
+        if hashes != '': 
+            output.append('_'+sortString)
+            
+            # calculate entropy of this lick's distribution over selected modes
+
+            # NOTE: this currently ignores any transposed or "capitalized" mode
+                        
+            modeEntropy = 0
+            total = 0
+            for m in self.modeFilter:      
+                total += self.lickModeDist[lick][m]
+            for m in self.modeFilter:
+                p = self.lickModeDist[lick][m] * 1. / total
+                if p != 0: modeEntropy -= p * math.log(p)
+            output.append(modeEntropy)
+            output.append(str(self.lickModeDist[lick]))
+            
+            outputList.append(output)
+        if lick[-1] == '>E' or n+1 == self.treeDepth: return
         for suffix in sorted(self.suffixTree[n+1][lick], key=sortMagic):
             if suffix == 'total': continue
             if self.suffixTree[n+1][lick][suffix] >= self.countThreshold:
-                    self.printPartialSuffixTree ( lick + suffix )
+                    self.traverseSuffixTree ( lick + suffix, chainLength, outputList )
 
     
-    def printPartialPrefixTree ( self, lick ):
+#     def printPartialPrefixTree ( self, lick ):
+# 
+#         def prefixProb ( lick ):
+#             n = len(lick)
+#             return self.prefixTree[n][lick[1:]][lick[0:1]] * 1. / self.prefixTree[n][lick[1:]]['total']
+# 
+#         n = len(lick)
+#         thePrefixProb = prefixProb(lick)
+#         output = ''
+#         output += '{:>6d}'.format(self.prefixTree[n][lick[1:]][lick[0:1]])
+#         for i in range(n,self.treeDepth+1): output += '    '
+#         for c in lick: output += '{:>4}'.format(c)
+#         output += '    '
+#         output += '{:.2f}'.format(thePrefixProb)
+#         if thePrefixProb > self.probThreshold: 
+#             output += " *"
+#         if output[-1]=='*': print output
+#         if lick[0] == '>S' or n == self.treeDepth: return
+#         for prefix in sorted(self.prefixTree[n+1][lick], key=sortMagic):
+#             if prefix == 'total': continue
+#             if self.prefixTree[n+1][lick][prefix] >= self.countThreshold:
+#                     self.printPartialPrefixTree ( prefix + lick )
+# 
+#     def printFullPrefixTree (self):
+#         for note in sorted(self.prefixTree[2], key=sortMagic):
+#             if note == 'total': continue
+#             self.printPartialPrefixTree(note)
 
-        def prefixProb ( lick ):
-            n = len(lick)
-            return self.prefixTree[n][lick[1:]][lick[0:1]] * 1. / self.prefixTree[n][lick[1:]]['total']
-
-        n = len(lick)
-        thePrefixProb = prefixProb(lick)
-        output = ''
-        output += '{:>6d}'.format(self.prefixTree[n][lick[1:]][lick[0:1]])
-        for i in range(n,self.treeDepth+1): output += '    '
-        for c in lick: output += '{:>4}'.format(c)
-        output += '    '
-        output += '{:.2f}'.format(thePrefixProb)
-        if thePrefixProb > self.probThreshold: 
-            output += " *"
-        if output[-1]=='*': print output
-        if lick[0] == '>S' or n == self.treeDepth: return
-        for prefix in sorted(self.prefixTree[n+1][lick], key=sortMagic):
-            if prefix == 'total': continue
-            if self.prefixTree[n+1][lick][prefix] >= self.countThreshold:
-                    self.printPartialPrefixTree ( prefix + lick )
-
-    def printFullPrefixTree (self):
-        for note in sorted(self.prefixTree[2], key=sortMagic):
-            if note == 'total': continue
-            self.printPartialPrefixTree(note)
-
-    def printFullSuffixTree (self):
+    def listLicks (self):
+        outputList = list()
         for note in sorted(self.suffixTree[2], key=sortMagic):
             if note == 'total': continue
-            self.printPartialSuffixTree(note)
+            self.traverseSuffixTree(note, 0, outputList)
+        return outputList
